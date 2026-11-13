@@ -1,0 +1,36 @@
+name: Build Epiphany x86_64-musl
+on:
+  push:
+    branches: [master, epiphany]
+  workflow_dispatch:
+
+jobs:
+  build-musl:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/void-linux/void-buildroot-musl:latest
+    steps:
+      - name: Checkout epiphany branch
+        uses: actions/checkout@v4
+        with:
+          ref: epiphany
+
+      - name: Lint and build epiphany for x86_64-musl
+        run: |
+          xbps-install -Suy xbps
+          xbps-install -Suy xtools
+          xlint srcpkgs/epiphany/template
+          echo "XBPS_CHROOT_CMD=ethereal" >> etc/conf
+          echo "XBPS_ALLOW_CHROOT_BREAKOUT=yes" >> etc/conf
+          ln -s / masterdir
+          ./xbps-src -j$(nproc) pkg epiphany
+
+      - name: Upload built .xbps package and repodata
+        uses: actions/upload-artifact@v4
+        with:
+          name: epiphany-x86_64-musl
+          path: |
+            hostdir/binpkgs/**/*.xbps
+            hostdir/binpkgs/**/*-repodata
+            hostdir/binpkgs/*.xbps
+            hostdir/binpkgs/*-repodata
