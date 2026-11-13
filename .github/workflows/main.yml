@@ -42,10 +42,4 @@ jobs:
             hostdir/binpkgs/**/*.xbps
             hostdir/binpkgs/**/*-repodata
             hostdir/binpkgs/*.xbps
-            hostdir/binpkgs/*-repodata        with:
-          name: epiphany-x86_64-musl
-          path: |
-            hostdir/binpkgs/**/*.xbps
-            hostdir/binpkgs/**/*-repodata
-            hostdir/binpkgs/*.xbps
             hostdir/binpkgs/*-repodata
