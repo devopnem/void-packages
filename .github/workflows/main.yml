@@ -13,14 +13,20 @@ jobs:
         with:
           ref: epiphany
 
-      - name: Lint and build epiphany in Void musl container
+      - name: Lint template on host (with full GNU grep -P)
+        run: |
+          curl -sL https://raw.githubusercontent.com/leahneukirchen/xtools/master/xlint -o /tmp/xlint
+          chmod +x /tmp/xlint
+          /tmp/xlint srcpkgs/epiphany/template
+
+      - name: Build epiphany in Void musl container
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
             ghcr.io/void-linux/void-buildroot-musl:latest \
-            /bin/bash -e -c '
-              xbps-install -Suy xbps
-              xbps-install -Suy xtools
-              xlint srcpkgs/epiphany/template
+            /bin/bash -c '
+              set -e
+              git config --global --add safe.directory /repo
+              xbps-install -Suy xbps || true
               printf "XBPS_CHROOT_CMD=ethereal\nXBPS_ALLOW_CHROOT_BREAKOUT=yes\n" >> etc/conf
               ln -sfn / masterdir
               ./xbps-src -j$(nproc) pkg epiphany
