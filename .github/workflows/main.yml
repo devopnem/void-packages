@@ -7,34 +7,33 @@ on:
 jobs:
   build-musl:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/void-linux/void-buildroot-musl:latest
     steps:
       - name: Checkout epiphany branch
         uses: actions/checkout@v4
         with:
           ref: epiphany
 
-      - name: Lint template on host (with full GNU grep -P)
+      - name: Lint and build epiphany for x86_64-musl
         run: |
-          curl -sL https://raw.githubusercontent.com/leahneukirchen/xtools/master/xlint -o /tmp/xlint
-          chmod +x /tmp/xlint
-          /tmp/xlint srcpkgs/epiphany/template
-
-      - name: Build epiphany in Void musl container
-        run: |
-          docker run --rm -v "$PWD:/repo" -w /repo \
-            ghcr.io/void-linux/void-buildroot-musl:latest \
-            /bin/bash -c '
-              set -e
-              git config --global --add safe.directory /repo
-              xbps-install -Suy xbps || true
-              printf "XBPS_CHROOT_CMD=ethereal\nXBPS_ALLOW_CHROOT_BREAKOUT=yes\n" >> etc/conf
-              ln -sfn / masterdir
-              ./xbps-src -j$(nproc) pkg epiphany
-              chmod -R a+rX hostdir/binpkgs
-            '
+          xbps-install -Suy xbps
+          xbps-install -Suy xtools
+          xlint srcpkgs/epiphany/template
+          echo "XBPS_CHROOT_CMD=ethereal" >> etc/conf
+          echo "XBPS_ALLOW_CHROOT_BREAKOUT=yes" >> etc/conf
+          ln -s / masterdir
+          ./xbps-src -j$(nproc) pkg epiphany
 
       - name: Upload built .xbps package and repodata
         uses: actions/upload-artifact@v4
+        with:
+          name: epiphany-x86_64-musl
+          path: |
+            hostdir/binpkgs/**/*.xbps
+            hostdir/binpkgs/**/*-repodata
+            hostdir/binpkgs/*.xbps
+            hostdir/binpkgs/*-repodata        uses: actions/upload-artifact@v4
         with:
           name: epiphany-x86_64-musl
           path: |
