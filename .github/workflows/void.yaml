@@ -1,0 +1,96 @@
+name: Build Void Package (x86_64-musl)
+
+on:
+  push:
+    branches-ignore:
+      - master
+  workflow_dispatch:
+    inputs:
+      pkgname:
+        description: 'Package name to build (leave empty to auto-detect from git diff)'
+        required: false
+        type: string
+
+jobs:
+  build-musl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current branch with history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect modified package(s)
+        id: detect
+        run: |
+          if [ -n "${{ github.event.inputs.pkgname }}" ]; then
+            PKGS="${{ github.event.inputs.pkgname }}"
+          else
+            git fetch origin master:refs/remotes/origin/master --depth=50 || true
+            # Find changed srcpkgs/*/template files compared to master (or last commit as fallback)
+            PKGS=$(git diff --name-only origin/master...HEAD -- 'srcpkgs/*/template' 2>/dev/null | cut -d/ -f2 | sort -u | tr '\n' ' ')
+            if [ -z "$PKGS" ]; then
+              PKGS=$(git diff --name-only HEAD~1...HEAD -- 'srcpkgs/*/template' 2>/dev/null | cut -d/ -f2 | sort -u | tr '\n' ' ')
+            fi
+          fi
+
+          PKGS=$(echo "$PKGS" | xargs)
+          if [ -z "$PKGS" ]; then
+            echo "::error::No modified templates found under srcpkgs/*/template!"
+            exit 1
+          fi
+
+          echo "Detected packages: $PKGS"
+          echo "pkgs=$PKGS" >> "$GITHUB_OUTPUT"
+          echo "first_pkg=$(echo "$PKGS" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Lint template(s) on host (GNU grep -P)
+        run: |
+          curl -sL https://raw.githubusercontent.com/leahneukirchen/xtools/master/xlint -o /tmp/xlint
+          chmod +x /tmp/xlint
+          for pkg in ${{ steps.detect.outputs.pkgs }}; do
+            echo "=== Linting srcpkgs/$pkg/template ==="
+            /tmp/xlint "srcpkgs/$pkg/template"
+          done
+
+      - name: Build package(s) in Void musl container
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            ghcr.io/void-linux/void-buildroot-musl:latest \
+            /bin/bash -c '
+              set -e
+              export PATH="/usr/libexec/chroot-git:$PATH"
+              git config --global --add safe.directory /repo || true
+              xbps-install -Suy xbps xtools || true
+              printf "XBPS_CHROOT_CMD=ethereal\nXBPS_ALLOW_CHROOT_BREAKOUT=yes\n" >> etc/conf
+              ln -sfn / masterdir
+
+              # 1. Bootstrap the masterdir using pre-built binaries
+              ./xbps-src binary-bootstrap
+
+              # 2. Build each detected package
+              for pkg in ${{ steps.detect.outputs.pkgs }}; do
+                echo "=========================================="
+                echo " Building package: $pkg"
+                echo "=========================================="
+                # If checksum is dummy 64 zeros, auto-generate it with xgensum and print it
+                if grep -q "^checksum=0\{64\}" "srcpkgs/$pkg/template"; then
+                  echo "::notice::Dummy checksum detected. Running xgensum -i $pkg..."
+                  xgensum -i "$pkg"
+                  echo "::notice::Updated checksum line: $(grep "^checksum=" "srcpkgs/$pkg/template")"
+                fi
+                ./xbps-src -j$(nproc) pkg "$pkg"
+              done
+
+              chmod -R a+rX hostdir/binpkgs
+            '
+
+      - name: Upload built .xbps package(s) and repodata
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.detect.outputs.first_pkg }}-x86_64-musl
+          path: |
+            hostdir/binpkgs/**/*.xbps
+            hostdir/binpkgs/**/*-repodata
+            hostdir/binpkgs/*.xbps
+            hostdir/binpkgs/*-repodata
