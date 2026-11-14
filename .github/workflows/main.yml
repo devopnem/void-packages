@@ -33,7 +33,7 @@ jobs:
               # 1. Bootstrap the masterdir using pre-built binaries
               ./xbps-src binary-bootstrap
               # 2. Now build only epiphany, using the pre-built dependencies
-              ./xbps-src -N -j$(nproc) pkg epiphany
+              ./xbps-src -j$(nproc) pkg epiphany
               chmod -R a+rX hostdir/binpkgs
             '
 
